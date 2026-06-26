@@ -3,6 +3,15 @@ import base64
 import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Semantic search model is optional — if it can't load, we fall back to keyword search.
+try:
+    from sentence_transformers import SentenceTransformer
+    HAS_SEMANTIC = True
+except Exception:
+    HAS_SEMANTIC = False
 
 # ----------------------------------------------------------------------
 # Load secrets from the .env file (this is where your API_TOKEN lives)
@@ -12,25 +21,11 @@ load_dotenv()
 # ----------------------------------------------------------------------
 # SETTINGS YOU MIGHT CHANGE
 # ----------------------------------------------------------------------
-# The AI model. "openrouter/free" automatically picks a working FREE model,
-# which helps you avoid both "model not found" (404) and "too busy" (429)
-# errors. If you'd rather pin a specific model, replace the line below with
-# any ":free" model ID from https://openrouter.ai/models (set Price = Free),
-# for example: "meta-llama/llama-3.2-3b-instruct:free"
-MODEL = "openrouter/free"
+MODEL = "openrouter/free"                 # auto-picks a working FREE chat model
+EMBED_MODEL = "all-MiniLM-L6-v2"          # free, lightweight semantic model (downloads once)
 
-# The app looks for your brand files in these places (first match wins).
-# Drop your logo into a folder called "Resources" next to this file.
-HEADER_LOGO_CANDIDATES = [
-    "Resources/HMA.jpg",
-    "Resources/HMA__Tagline.jpg",
-    "HMA.jpg",
-]
-ICON_CANDIDATES = [
-    "Resources/HMA_ICON.jpg",
-    "HMA_ICON.jpg",
-    "Resources/HMA.jpg",
-]
+HEADER_LOGO_CANDIDATES = ["Resources/HMA.jpg", "Resources/HMA__Tagline.jpg", "HMA.jpg"]
+ICON_CANDIDATES = ["Resources/HMA_ICON.jpg", "HMA_ICON.jpg", "Resources/HMA.jpg"]
 CONTEXT_CANDIDATES = ["Resources/summary.txt", "Resources/resume.pdf"]
 
 
@@ -38,7 +33,6 @@ CONTEXT_CANDIDATES = ["Resources/summary.txt", "Resources/resume.pdf"]
 # Small helpers
 # ----------------------------------------------------------------------
 def first_existing(paths):
-    """Return the first file path that actually exists, otherwise None."""
     for p in paths:
         if os.path.exists(p):
             return p
@@ -46,7 +40,6 @@ def first_existing(paths):
 
 
 def img_to_data_uri(path):
-    """Turn an image file into text we can embed directly inside HTML."""
     ext = os.path.splitext(path)[1].lower().replace(".", "")
     mime = "png" if ext == "png" else "jpeg"
     with open(path, "rb") as f:
@@ -59,7 +52,7 @@ ICON_PATH = first_existing(ICON_CANDIDATES)
 
 
 # ----------------------------------------------------------------------
-# 1. Page configuration  (this MUST be the first Streamlit command)
+# 1. Page configuration  (MUST be the first Streamlit command)
 # ----------------------------------------------------------------------
 st.set_page_config(
     page_title="Dr. Awal O. Abdulrahman — AI Assistant",
@@ -70,8 +63,7 @@ st.set_page_config(
 
 
 # ----------------------------------------------------------------------
-# 2. Brand styling (custom CSS) — this is what makes it look professional.
-#    Colours are taken straight from your HayMedics brand.
+# 2. Brand styling (custom CSS) — HayMedics colours
 # ----------------------------------------------------------------------
 st.markdown(
     """
@@ -79,25 +71,15 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
 
     :root {
-        --navy:#16235A;
-        --navy-deep:#0E1A45;
-        --blue:#2D5BB8;
-        --blue-soft:#EAF0FB;
-        --orange:#F5A623;
-        --orange-deep:#E8901A;
-        --bg:#F4F6FB;
-        --card:#FFFFFF;
-        --text:#1B2440;
-        --muted:#64708A;
-        --border:#E3E8F2;
+        --navy:#16235A; --navy-deep:#0E1A45; --blue:#2D5BB8; --blue-soft:#EAF0FB;
+        --orange:#F5A623; --orange-deep:#E8901A; --bg:#F4F6FB; --card:#FFFFFF;
+        --text:#1B2440; --muted:#64708A; --border:#E3E8F2;
     }
 
-    /* Base look */
     html, body, [class*="css"] { font-family:'Inter', sans-serif; color:var(--text); }
     .stApp { background:var(--bg); }
     .block-container { max-width:880px; padding-top:0.5rem; padding-bottom:8rem; }
 
-    /* Hide Streamlit's default chrome (Deploy button, menu, footer, status) */
     [data-testid="stToolbar"] { display:none; }
     [data-testid="stDecoration"] { display:none; }
     [data-testid="stStatusWidget"] { display:none; }
@@ -108,17 +90,11 @@ st.markdown(
 
     h1, h2, h3 { font-family:'Poppins', sans-serif; color:var(--navy); }
 
-    /* ---- Header card holding the logo ---- */
     .header-card {
-        background:var(--card);
-        border:1px solid var(--border);
-        border-top:4px solid var(--orange);
-        border-radius:16px;
-        padding:15px 24px;
+        background:var(--card); border:1px solid var(--border); border-top:4px solid var(--orange);
+        border-radius:16px; padding:15px 24px;
         display:flex; align-items:center; justify-content:space-between;
-        flex-wrap:wrap; gap:14px;
-        box-shadow:0 6px 24px rgba(16,35,90,0.06);
-        margin-bottom:13px;
+        flex-wrap:wrap; gap:14px; box-shadow:0 6px 24px rgba(16,35,90,0.06); margin-bottom:13px;
     }
     .brand-logo { height:72px; width:auto; display:block; }
     .brand-fallback { font-family:'Poppins'; font-weight:700; font-size:26px; color:var(--navy); }
@@ -130,7 +106,6 @@ st.markdown(
         padding:9px 16px; border-radius:999px; white-space:nowrap;
     }
 
-    /* ---- Title block (self-contained so Streamlit can't resize it) ---- */
     .eyebrow {
         font-family:'Poppins', sans-serif; font-weight:600; font-size:11px; letter-spacing:2px;
         text-transform:uppercase; color:var(--orange-deep); margin:0 0 6px 0;
@@ -142,36 +117,21 @@ st.markdown(
     }
     .page-sub { color:var(--muted); font-size:13px; line-height:1.5; margin:0; }
 
-    /* ---- Chat bubbles ---- */
     [data-testid="stChatMessage"] {
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:14px;
-        padding:6px 14px;
-        box-shadow:0 2px 10px rgba(16,35,90,0.04);
-        margin-bottom:10px;
+        background:var(--card); border:1px solid var(--border); border-radius:14px;
+        padding:6px 14px; box-shadow:0 2px 10px rgba(16,35,90,0.04); margin-bottom:10px;
     }
 
-    /* ---- Buttons in the MAIN area = suggested-question chips ---- */
     .stButton > button {
-        background:var(--card);
-        color:var(--navy);
-        border:1px solid var(--border);
-        border-radius:12px;
-        padding:14px 16px;
-        font-family:'Inter'; font-weight:500; font-size:14px;
-        text-align:left; line-height:1.35;
-        box-shadow:0 2px 10px rgba(16,35,90,0.04);
-        transition:all .15s ease;
-        height:100%;
+        background:var(--card); color:var(--navy); border:1px solid var(--border);
+        border-radius:12px; padding:14px 16px;
+        font-family:'Inter'; font-weight:500; font-size:14px; text-align:left; line-height:1.35;
+        box-shadow:0 2px 10px rgba(16,35,90,0.04); transition:all .15s ease; height:100%;
     }
     .stButton > button:hover {
-        border-color:var(--orange);
-        box-shadow:0 6px 18px rgba(245,166,35,0.18);
-        transform:translateY(-1px);
+        border-color:var(--orange); box-shadow:0 6px 18px rgba(245,166,35,0.18); transform:translateY(-1px);
     }
 
-    /* ---- Sidebar ---- */
     [data-testid="stSidebar"] { background:var(--card); border-right:1px solid var(--border); }
     [data-testid="stSidebar"] .sb-logo { text-align:center; padding:8px 0 2px 0; }
     [data-testid="stSidebar"] .sb-logo img { max-width:185px; height:auto; }
@@ -179,7 +139,6 @@ st.markdown(
         text-align:center; color:var(--muted); font-size:12px; font-weight:500;
         letter-spacing:.3px; margin:8px 0 4px 0;
     }
-    /* Sidebar buttons override the chip style = solid navy action button */
     [data-testid="stSidebar"] .stButton > button {
         background:var(--navy); color:#FFFFFF; border:none; border-radius:10px;
         font-family:'Poppins'; font-weight:600; font-size:14px; text-align:center;
@@ -189,7 +148,6 @@ st.markdown(
         background:var(--orange-deep); transform:none; box-shadow:none;
     }
 
-    /* Chat input box */
     [data-testid="stChatInput"] textarea { font-family:'Inter'; }
     </style>
     """,
@@ -198,24 +156,28 @@ st.markdown(
 
 
 # ----------------------------------------------------------------------
-# 3. Connect to the AI service (OpenRouter)  —  your working settings
+# 3. Connect to the AI service (OpenRouter)
 # ----------------------------------------------------------------------
 @st.cache_resource
 def get_openai_client():
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("API_TOKEN"),
-    )
+    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("API_TOKEN"))
 
 
 client = get_openai_client()
 
 
+# ======================================================================
+# 4. RAG with SEMANTIC EMBEDDINGS
 # ----------------------------------------------------------------------
-# 4. Load Dr. Awal's profile (resume / summary) to ground the answers
-# ----------------------------------------------------------------------
-@st.cache_data
-def load_context_data():
+# Keyword search (TF-IDF) matches exact words. Semantic search matches
+# MEANING: it turns each chunk into a "meaning vector" (an embedding) so
+# that "how do I contact him" can match a section about "email and phone",
+# even though they share no words.
+#
+# If the semantic model can't load (e.g. resource limits), the app
+# AUTOMATICALLY falls back to keyword search, so it never breaks.
+# ======================================================================
+def load_context_text():
     path = first_existing(CONTEXT_CANDIDATES)
     if path:
         try:
@@ -223,31 +185,112 @@ def load_context_data():
                 return f.read()
         except Exception:
             pass
-    return "Resume context unavailable."
+    return ""
 
 
-resume_context = load_context_data()
+def build_chunks(text, target_words=60):
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    chunks, current = [], ""
+    for para in paragraphs:
+        combined = (current + "\n" + para).strip()
+        if not current or len(combined.split()) <= target_words:
+            current = combined
+        else:
+            chunks.append(current)
+            current = para
+    if current:
+        chunks.append(current)
+    return chunks
 
 
-# ----------------------------------------------------------------------
-# 5. The persona instructions sent to the AI
-# ----------------------------------------------------------------------
-SYSTEM_PROMPT = f"""
-You are an advanced AI assistant representing Dr. Awal Olalekan Abdulrahman.
-Your purpose is to answer questions about his career, background, skills, and professional experience accurately based ONLY on the provided context.
+@st.cache_resource(show_spinner="Loading semantic search model…")
+def get_embedder():
+    """Load the meaning-vector model once. Returns None if unavailable."""
+    if not HAS_SEMANTIC:
+        return None
+    try:
+        return SentenceTransformer(EMBED_MODEL)
+    except Exception:
+        return None
+
+
+@st.cache_resource(show_spinner=False)
+def get_knowledge_base():
+    """Index the profile once. Uses semantic search if possible, else keyword."""
+    text = load_context_text()
+    chunks = build_chunks(text)
+    if not chunks:
+        return {"mode": "empty", "text": text, "chunks": []}
+
+    embedder = get_embedder()
+    if embedder is not None:
+        vectors = embedder.encode(chunks, normalize_embeddings=True)
+        return {"mode": "semantic", "text": text, "chunks": chunks,
+                "embedder": embedder, "vectors": vectors}
+
+    # Fallback: keyword search
+    vectorizer = TfidfVectorizer(stop_words="english")
+    matrix = vectorizer.fit_transform(chunks)
+    return {"mode": "keyword", "text": text, "chunks": chunks,
+            "vectorizer": vectorizer, "matrix": matrix}
+
+
+def retrieve_context(query, kb, k=3):
+    """Find the k most relevant chunks. Returns (context_text, [(chunk, score), ...])."""
+    chunks = kb["chunks"]
+    if not chunks:
+        return kb["text"], []
+
+    if kb["mode"] == "semantic":
+        q_vec = kb["embedder"].encode([query], normalize_embeddings=True)
+        scores = cosine_similarity(q_vec, kb["vectors"])[0]
+    else:  # keyword
+        q_vec = kb["vectorizer"].transform([query])
+        scores = cosine_similarity(q_vec, kb["matrix"])[0]
+
+    ranked = scores.argsort()[::-1]
+    picked = [(chunks[i], float(scores[i])) for i in ranked[:k] if scores[i] > 0]
+    if not picked:
+        return kb["text"], []  # very general question → use the whole profile
+    return "\n\n".join(chunk for chunk, _ in picked), picked
+
+
+def build_system_prompt(context_text):
+    context_text = context_text.strip() or "No profile information is currently available."
+    return f"""You are an advanced AI assistant representing Dr. Awal Olalekan Abdulrahman.
+Answer questions about his career, background, skills, and experience using ONLY the context below.
 
 Context:
-{resume_context}
+{context_text}
 
 Guidelines:
 - Speak professionally, elegantly, and confidently.
-- If asked questions outside his professional profile, gently steer the conversation back to his medical, data science, or educational expertise.
-- Do not make up facts or certifications not explicitly listed in the context.
+- If the answer is not in the context, say you don't have that detail rather than guessing.
+- If asked something outside his professional profile, gently steer back to his medical, data science, or educational expertise.
+- Never invent facts, dates, or certifications that are not present in the context.
 """
 
 
+def render_sources(sources):
+    if not sources:
+        return
+    with st.expander("📚  Sources used to answer this"):
+        for i, (chunk, score) in enumerate(sources, 1):
+            st.markdown(f"**Match {i}** · relevance {score:.0%}")
+            preview = chunk[:400] + ("…" if len(chunk) > 400 else "")
+            st.caption(preview)
+
+
+KB = get_knowledge_base()
+MODE_LABELS = {
+    "semantic": "🧠 Semantic (meaning-based)",
+    "keyword": "🔤 Keyword (fallback)",
+    "empty": "⚠️ No profile indexed",
+}
+
+
 # ----------------------------------------------------------------------
-# 6. Sidebar (brand + quick reference)
+# 5. Sidebar (brand + quick reference + RAG controls)
 # ----------------------------------------------------------------------
 with st.sidebar:
     sidebar_logo = LOGO_PATH or ICON_PATH
@@ -282,6 +325,15 @@ with st.sidebar:
         st.markdown("[HayMedics on YouTube](https://www.youtube.com/@HayMedicsAcademy)")
         st.markdown("[GitHub](https://github.com/HayMedics)")
 
+    with st.expander("⚙️  Assistant settings"):
+        k = st.slider(
+            "Context depth",
+            min_value=1, max_value=5, value=3,
+            help="How many of the most relevant profile sections the AI reads for each question.",
+        )
+        st.caption(f"Search mode: {MODE_LABELS.get(KB['mode'], KB['mode'])}")
+        st.caption(f"🔎 Knowledge base: {len(KB['chunks'])} sections indexed")
+
     st.markdown("---")
     if st.button("🧹  Clear conversation", use_container_width=True):
         st.session_state.messages = []
@@ -295,7 +347,7 @@ with st.sidebar:
 
 
 # ----------------------------------------------------------------------
-# 7. Main header (logo card + title)
+# 6. Main header (logo card + title)
 # ----------------------------------------------------------------------
 if LOGO_PATH:
     logo_html = f'<img src="{img_to_data_uri(LOGO_PATH)}" class="brand-logo"/>'
@@ -306,36 +358,32 @@ st.markdown(
     f"""
     <div class="header-card">
         <div>{logo_html}</div>
-        <div class="header-pill">AI Assistant</div>
+        <div class="header-pill">AI Assistant · Semantic RAG</div>
     </div>
-    <div class="eyebrow">Conversational AI</div>
+    <div class="eyebrow">Semantic Retrieval-Augmented AI</div>
     <div class="page-title">Chat with Dr. Awal&#39;s AI Assistant</div>
-    <p class="page-sub">Answers are drawn from Dr. Awal&#39;s verified professional profile.</p>
+    <p class="page-sub">Answers are retrieved by meaning from Dr. Awal&#39;s verified profile — with sources shown.</p>
     """,
     unsafe_allow_html=True,
 )
 
 
 # ----------------------------------------------------------------------
-# 8. The conversation
+# 7. The conversation
 # ----------------------------------------------------------------------
-# Make sure we have somewhere to store the chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# The text box (Streamlit always pins this to the bottom of the page)
 typed = st.chat_input("Ask about clinical work, data projects, research…")
-
-# The prompt can come from the text box OR from a suggested-question chip
 prompt = typed
 
-# Show the conversation so far
 for message in st.session_state.messages:
     avatar = "🩺" if message["role"] == "assistant" else "👤"
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
+        if message["role"] == "assistant":
+            render_sources(message.get("sources"))
 
-# Show suggested questions only at the very start (empty, nothing typed yet)
 if not st.session_state.messages and not typed:
     st.markdown(
         '<p style="margin:12px 0 8px 0;font-family:Poppins;font-weight:600;'
@@ -346,7 +394,7 @@ if not st.session_state.messages and not typed:
         "Who is Dr. Awal and what is his background?",
         "What data science projects has he built?",
         "Tell me about his clinical experience.",
-        "What is HayMedics Academy?",
+        "How can I get in touch with him?",
     ]
     col_left, col_right = st.columns(2)
     grid = [col_left, col_right, col_left, col_right]
@@ -354,27 +402,25 @@ if not st.session_state.messages and not typed:
         if grid[i].button(question, key=f"starter_{i}", use_container_width=True):
             prompt = question
 
-# If we have a new prompt, answer it
 if prompt:
-    # Show the user's message
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Build the full message list for the AI (system prompt + history)
-    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # --- RAG step: retrieve the most relevant profile sections by MEANING ---
+    context, sources = retrieve_context(prompt, KB, k=k)
+    system_prompt = build_system_prompt(context)
+
+    api_messages = [{"role": "system", "content": system_prompt}]
     for msg in st.session_state.messages:
         api_messages.append({"role": msg["role"], "content": msg["content"]})
 
-    # Stream the assistant's reply so it "types" out
     with st.chat_message("assistant", avatar="🩺"):
         response_placeholder = st.empty()
         full_response = ""
         try:
             response = client.chat.completions.create(
-                model=MODEL,
-                messages=api_messages,
-                stream=True,
+                model=MODEL, messages=api_messages, stream=True,
             )
             for chunk in response:
                 if chunk.choices[0].delta.content:
@@ -382,7 +428,6 @@ if prompt:
                     response_placeholder.markdown(full_response + "▌")
             response_placeholder.markdown(full_response)
         except Exception as e:
-            # An error message that tells you what to do, not just "sorry"
             response_placeholder.error(
                 "Couldn't reach the AI just now. If this keeps happening, the free "
                 "model may be busy (429) or renamed (404) — change the MODEL line near "
@@ -390,5 +435,8 @@ if prompt:
             )
             full_response = "I'm sorry, I'm having trouble processing that request right now."
 
-    # Save the assistant's reply to history
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+        render_sources(sources)
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": full_response, "sources": sources}
+    )
