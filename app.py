@@ -73,7 +73,9 @@ st.markdown(
     html, body, [class*="css"] { font-family:'Inter', sans-serif; color:var(--text); }
     .stApp { background:var(--bg); }
     .block-container { max-width:880px; padding-top:0.5rem; padding-bottom:8rem; }
-    [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton { display:none; }
+   [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton { display:none; }
+    [data-testid="stToolbar"] button[title="Deploy"] { display:none; }
+    [data-testid="collapsedControl"] { display:block !important; visibility:visible !important; }
     #MainMenu, footer { visibility:hidden; }
     header { background:transparent; }
     h1, h2, h3 { font-family:'Poppins', sans-serif; color:var(--navy); }
