@@ -4,3 +4,4 @@ python-dotenv
 pypdf
 scikit-learn
 sentence-transformers
+pandas
