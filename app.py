@@ -73,9 +73,7 @@ st.markdown(
     html, body, [class*="css"] { font-family:'Inter', sans-serif; color:var(--text); }
     .stApp { background:var(--bg); }
     .block-container { max-width:880px; padding-top:0.5rem; padding-bottom:8rem; }
-    [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton { display:none; }
-    [data-testid="stToolbar"] button[title="Deploy"] { display:none; }
-    [data-testid="collapsedControl"] { display:block !important; visibility:visible !important; }
+    [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton { display:none; }
     #MainMenu, footer { visibility:hidden; }
     header { background:transparent; }
     h1, h2, h3 { font-family:'Poppins', sans-serif; color:var(--navy); }
@@ -273,19 +271,20 @@ def render_sources(sources):
 
 
 def render_confidence(score):
-    """Small coloured badge showing how well the question matched the profile."""
+    """Small coloured badge showing how relevant the retrieved profile section is.
+    Semantic similarity scores are naturally low, so thresholds are tuned for them."""
     if score is None:
         return
-    if score >= 0.45:
-        bg, fg, label = "#E6F4EC", "#1F7A47", "High"
-    elif score >= 0.28:
-        bg, fg, label = "#FDF1DF", "#9A5B00", "Medium"
+    if score >= 0.30:
+        bg, fg, label = "#E6F4EC", "#1F7A47", "Strong match"
+    elif score >= 0.18:
+        bg, fg, label = "#FDF1DF", "#9A5B00", "Partial match"
     else:
-        bg, fg, label = "#FBEAE8", "#9B2D22", "Low"
+        bg, fg, label = "#EAF0FB", "#2D5BB8", "General answer"
     st.markdown(
         f'<span style="display:inline-block;font-family:Poppins;font-weight:600;font-size:11px;'
         f'padding:4px 11px;border-radius:999px;background:{bg};color:{fg};margin-top:4px;">'
-        f'● {label} confidence · {score:.0%} match</span>',
+        f'● {label} · {score:.0%} relevance</span>',
         unsafe_allow_html=True,
     )
 
@@ -403,7 +402,7 @@ def render_analytics():
     c1.metric("Questions asked", len(df))
     c2.metric("Unique visitors", df["session_id"].nunique())
     avg = df["confidence"].mean()
-    c3.metric("Avg. match confidence", f"{avg:.0%}" if pd.notna(avg) else "—")
+    c3.metric("Avg. relevance", f"{avg:.0%}" if pd.notna(avg) else "—")
 
     st.markdown("##### Questions per day")
     daily = df.dropna(subset=["timestamp"]).groupby(df["timestamp"].dt.date).size().rename("questions")
@@ -432,7 +431,7 @@ def render_analytics():
 def render_chat():
     st.markdown('<div class="eyebrow">Semantic Retrieval-Augmented AI</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-title">Chat with Dr. Awal&#39;s AI Assistant</div>', unsafe_allow_html=True)
-    st.markdown('<p class="page-sub">Answers are retrieved by meaning from Dr. Awal&#39;s verified profile — with sources and a confidence score.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="page-sub">Answers are retrieved by meaning from Dr. Awal&#39;s verified profile — with sources and a relevance score.</p>', unsafe_allow_html=True)
 
     typed = st.chat_input("Ask about clinical work, data projects, research…")
     prompt = typed
