@@ -1,35 +1,58 @@
 # 🩺 Dr. Awal's AI Assistant
-### Conversational AI · HayMedics Academy
+### Semantic RAG · Usage Analytics · HayMedics Academy
 
-> An AI-powered personal assistant that answers questions about Dr. Awal Olalekan Abdulrahman's career, clinical experience, data science projects, and HayMedics Academy — built with Streamlit and powered by OpenRouter's free LLM tier.
+> An AI-powered personal assistant that answers questions about Dr. Awal Olalekan Abdulrahman's career, clinical experience, data science projects, and HayMedics Academy.
+> Built with Streamlit, powered by OpenRouter's free LLM tier, and upgraded with semantic retrieval-augmented generation (RAG), live usage analytics, and a relevance scoring system.
 
 ---
 
 ## 🌐 Live Demo
 
-🔗 **[Try it live →](https://your-app-name.streamlit.app)**
-*(Replace this link with your Streamlit Community Cloud URL after deployment)*
+🔗 **[dr-awwal-ai-assistant.streamlit.app](https://dr-awwal-ai-assistant.streamlit.app)**
 
 ---
 
-## 📸 Preview
+## 📸 What It Looks Like
 
-| Landing screen | Chat in action |
+| Feature | Description |
 |---|---|
-| Logo card · suggested questions · branded sidebar | Streaming replies · conversation history · clear chat |
+| **Chat view** | Branded interface · suggested question chips · streaming replies |
+| **Relevance badge** | 🟢 Strong match · 🟡 Partial match · 🔵 General answer |
+| **Sources panel** | Expandable "Sources used" showing which profile sections were retrieved |
+| **Analytics view** | Questions asked · unique visitors · avg relevance · daily chart · top questions |
 
 ---
 
 ## ✨ Features
 
-- **Branded interface** — HayMedics navy, blue, and orange colour system; Poppins + Inter typography; custom header card matching the HayMedics portfolio style
-- **Persona AI** — answers exclusively from Dr. Awal's verified professional profile (no hallucination of uncited facts)
+### AI & Retrieval
+- **Semantic RAG** — the profile is split into chunks and indexed using `sentence-transformers` (`all-MiniLM-L6-v2`). Each question is matched to the most relevant chunks by *meaning*, not just keywords — so "how do I contact him?" correctly retrieves the email/phone section even though the words don't overlap
+- **Automatic fallback** — if the semantic model can't load (e.g. resource limits), the app silently falls back to TF-IDF keyword search. The sidebar shows which mode is active: `🧠 Semantic` or `🔤 Keyword`
+- **Grounded persona** — the AI answers exclusively from Dr. Awal's verified profile (`summary.txt`). It will not invent facts, dates, or certifications
 - **Streaming replies** — responses type out in real time for a natural feel
-- **Suggested question chips** — four clickable starters help visitors know what to ask
-- **Conversation memory** — full chat history maintained within the session
-- **Free to run** — uses `openrouter/free`, which auto-selects a working free model so the app never hits a paid-model wall
-- **Graceful error messages** — if the free model is busy (429) or renamed (404), the app tells you exactly what to change instead of just saying "sorry"
-- **Logo fallback** — if brand images are missing, the app renders a clean text logo so it never crashes
+- **Adjustable context depth** — a sidebar slider controls how many profile sections the AI reads per question (1–5)
+
+### Explainability
+- **Relevance badge** — every answer carries a calibrated badge showing how well the retrieved section matched the question. Labels are tuned for real semantic similarity scores:
+  - `🟢 Strong match` — ≥ 30% relevance
+  - `🟡 Partial match` — 18–29% relevance
+  - `🔵 General answer` — below 18% (neutral, not alarming)
+- **Sources panel** — an expandable drawer shows exactly which parts of the profile were used to construct each answer, with relevance percentages
+
+### Analytics Dashboard
+- **Usage tracking** — every question is silently logged to a local SQLite database (WAL mode, thread-safe)
+- **Dashboard metrics** — total questions asked · unique visitors · average relevance score
+- **Daily activity chart** — bar chart of questions per day
+- **Top questions table** — most frequently asked questions, ranked
+- **Recent activity feed** — last 10 questions with timestamps and relevance scores
+- **Optional admin password** — set `ADMIN_PASSWORD` in Streamlit secrets to gate the dashboard; leave it unset to keep it open
+
+### Interface & Branding
+- **HayMedics brand** — navy `#16235A`, royal blue `#2D5BB8`, orange `#F5A623`; Poppins + Inter typography; orange-top-striped header card matching the HayMedics portfolio style
+- **Suggested question chips** — four starter questions on first load, disappear once the conversation begins
+- **Two-view navigation** — `💬 Chat` and `📊 Analytics` radio buttons in the sidebar
+- **Logo with fallback** — loads `HMA.jpg` from the Resources folder; falls back to a styled text logo if the file is missing, so the app never crashes
+- **Persistent sidebar arrow** — the expand/collapse arrow is always visible, regardless of browser state
 
 ---
 
@@ -38,18 +61,19 @@
 ```
 AgenticAI/
 │
-├── app.py                  # Main Streamlit application
-├── requirements.txt        # Python dependencies
-├── .gitignore              # Keeps .env and .venv off GitHub
+├── app.py                  # Main Streamlit application (all logic in one file)
+├── requirements.txt        # Python dependencies for local and cloud
+├── .gitignore              # Keeps .env, .venv, and analytics.db off GitHub
 ├── README.md               # This file
 │
 └── Resources/
-    ├── summary.txt         # Dr. Awal's knowledge file (AI context)
-    ├── HMA.jpg             # HayMedics Academy horizontal logo
-    └── HMA_ICON.jpg        # HayMedics Academy icon (browser tab)
+    ├── summary.txt         # Dr. Awal's knowledge file — what the AI reads
+    ├── HMA.jpg             # HayMedics Academy horizontal logo (header card)
+    └── HMA_ICON.jpg        # HayMedics Academy icon (browser tab favicon)
 ```
 
-> ⚠️ The `.env` file is **not** included — it contains your private API key and must never be uploaded to GitHub.
+> ⚠️ `.env` is **never** uploaded to GitHub. It contains your private API key.
+> ⚠️ `analytics.db` is **never** uploaded to GitHub. It's a local runtime file.
 
 ---
 
@@ -57,9 +81,13 @@ AgenticAI/
 
 | Tool | Purpose |
 |---|---|
-| [Streamlit](https://streamlit.io) | Web app framework |
-| [OpenRouter](https://openrouter.ai) | Free LLM API gateway |
+| [Streamlit](https://streamlit.io) | Web app framework and UI |
+| [OpenRouter](https://openrouter.ai) | Free LLM API gateway (`openrouter/free`) |
 | [OpenAI Python SDK](https://github.com/openai/openai-python) | API client (OpenRouter is OpenAI-compatible) |
+| [sentence-transformers](https://sbert.net) | Semantic embedding model (`all-MiniLM-L6-v2`) |
+| [scikit-learn](https://scikit-learn.org) | TF-IDF fallback search + cosine similarity |
+| [pandas](https://pandas.pydata.org) | Analytics dashboard data processing |
+| [SQLite](https://www.sqlite.org) | Lightweight usage analytics database |
 | [python-dotenv](https://pypi.org/project/python-dotenv/) | Load `.env` secrets locally |
 | Python 3.11+ | Language |
 
@@ -84,88 +112,107 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install dependencies
+### 3. Install all dependencies
 ```bash
 pip install -r requirements.txt
 ```
+> Note: `sentence-transformers` is a large library (~500 MB with dependencies). Installation may take several minutes on a slow connection.
 
 ### 4. Create your `.env` file
-Create a file called `.env` in the project root and add your OpenRouter API key:
 ```
 API_TOKEN=sk-or-v1-your-key-here
 ```
 Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys) — no credit card required.
 
 ### 5. Add your knowledge file
-Put Dr. Awal's profile text in `Resources/summary.txt`. This is what the AI reads to answer questions.
+Put Dr. Awal's profile content in `Resources/summary.txt`. This is the only document the AI reads to answer questions.
 
 ### 6. Run the app
 ```bash
 streamlit run app.py
 ```
-Open your browser at `http://localhost:8501`.
+Open `http://localhost:8501`. The semantic model downloads automatically on first run (~90 MB), then is cached.
 
 ---
 
 ## ☁️ Deploy to Streamlit Community Cloud
 
-1. Push this repository to GitHub (excluding `.env` and `.venv`).
+1. Push this repository to a **public** GitHub repo (Streamlit's free plan requires public repos).
 2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
 3. Click **New app** and fill in:
    - **Repository:** `HayMedics/AgenticAI`
    - **Branch:** `main`
    - **Main file path:** `app.py`
-4. Click **Deploy**.
-5. After deployment, go to **⋮ → Settings → Secrets** and add:
+4. Click **Deploy** and wait ~3–5 minutes (longer on first deploy due to library installation).
+5. Go to **⋮ → Settings → Secrets** and add:
 ```toml
 API_TOKEN = "sk-or-v1-your-key-here"
 ```
-6. Save — the app restarts with your key loaded. Done.
+6. Optionally add an admin password for the analytics dashboard:
+```toml
+ADMIN_PASSWORD = "your-chosen-password"
+```
 
 ---
 
-## 🔑 Switching the AI Model
+## ⚙️ Configuration Reference
 
-The model is set in one place near the top of `app.py`:
+All key settings are at the top of `app.py`:
 
 ```python
-MODEL = "openrouter/free"
+MODEL = "openrouter/free"        # LLM: auto-picks any working free model
+EMBED_MODEL = "all-MiniLM-L6-v2" # Semantic embedding model (free, local)
+DB_PATH = "analytics.db"          # Analytics database location
 ```
 
-- `"openrouter/free"` — auto-picks any working free model (recommended, most stable).
-- Any `:free` model ID from [openrouter.ai/models](https://openrouter.ai/models) — pin a specific model if you prefer.
+**To pin a specific LLM:** replace `"openrouter/free"` with any `:free` model ID from [openrouter.ai/models](https://openrouter.ai/models).
 
 ---
 
 ## 🧠 How It Works
 
 ```
-User types a question
+User asks a question
         ↓
-Streamlit sends it to OpenRouter API
+Profile (summary.txt) is split into ~60-word chunks
         ↓
-OpenRouter routes it to a free LLM
+Each chunk is encoded into a meaning vector (embedding)
         ↓
-LLM reads the system prompt (Dr. Awal's profile + guidelines)
+The question is also encoded into a meaning vector
         ↓
-Answer streams back word by word
+Cosine similarity finds the most relevant chunks
         ↓
-Streamlit renders it in the chat window
+Top chunks + question → sent to LLM via OpenRouter
+        ↓
+LLM generates an answer grounded in those chunks only
+        ↓
+Answer streams back · relevance badge shown · sources displayed
+        ↓
+Question + relevance score silently logged to SQLite
 ```
 
-The AI only answers from the content in `Resources/summary.txt`. It will not invent qualifications or experiences not listed there.
+**Why semantic search beats keyword search:**
+Keyword search matches exact words. Semantic search matches meaning. "How do I reach him?" and "email / phone number" share no words — but their meanings are related, so semantic embeddings correctly retrieve the contact section. Keyword search scores 0.00 on this; semantic search retrieves it reliably.
+
+---
+
+## 📊 Analytics Notes
+
+The analytics database (`analytics.db`) is stored locally and **resets when Streamlit's free tier restarts the app** (ephemeral filesystem). This is fine for demos and interviews — ask a few questions to populate it, then open the Analytics view.
+
+For persistent analytics that survive restarts, the next upgrade is a cloud database (e.g. [Supabase](https://supabase.com) free tier), which is a drop-in replacement for the SQLite connection in `app.py`.
 
 ---
 
 ## 📁 Updating the Knowledge File
 
-To add new information (new projects, certifications, experiences):
+To add new information (projects, certifications, research):
 
 1. Open `Resources/summary.txt` in any text editor.
-2. Add your new content at the bottom.
+2. Add your new content — separate sections with a blank line between them so the chunking works correctly.
 3. Save the file.
-4. Restart the app locally (`Ctrl + C` → `streamlit run app.py`).
-5. On Streamlit Cloud — push the updated file to GitHub; the cloud app redeploys automatically.
+4. **Locally:** restart the app (`Ctrl + C` → `streamlit run app.py`) — the index rebuilds automatically.
+5. **On Streamlit Cloud:** upload the updated file to GitHub — the app redeploys automatically.
 
 ---
 
@@ -183,5 +230,5 @@ Medical Doctor · Data Scientist · Medical Educator · Founder, HayMedics Acade
 
 ## 📄 Licence
 
-This project is for portfolio and educational demonstration purposes.  
+This project is for portfolio and educational demonstration purposes.
 © 2026 Awal Abdulrahman · HayMedics Academy — Data | Research | Innovation
