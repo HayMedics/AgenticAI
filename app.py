@@ -191,7 +191,7 @@ def load_context_text():
     return "", None
 
 
-def build_chunks(text, target_words=60):
+def build_chunks(text, target_words=150):
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks, current = [], ""
     for para in paragraphs:
@@ -332,7 +332,7 @@ with st.sidebar:
         st.markdown("[HayMedics on YouTube](https://www.youtube.com/@HayMedicsAcademy)")
         st.markdown("[GitHub](https://github.com/HayMedics)")
     with st.expander("⚙️  Assistant settings"):
-        k = st.slider("Context depth", 1, 5, 3, help="How many of the most relevant profile sections the AI reads per question.")
+        k = st.slider("Context depth", 1, 10, 7, help="How many of the most relevant profile sections the AI reads per question.")
         st.caption(f"Search mode: {MODE_LABELS.get(KB['mode'], KB['mode'])}")
         st.caption(f"🔎 Knowledge base: {len(KB['chunks'])} sections indexed")
         st.caption(f"📄 Reading: {KB.get('source_file') or '⚠️ NO FILE FOUND'}")
