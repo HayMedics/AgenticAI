@@ -235,6 +235,15 @@ def retrieve_context(query, kb, k=3):
     chunks = kb["chunks"]
     if not chunks:
         return kb["text"], []
+
+    # Broad questions ("list all his projects", "his portfolio") need wide
+    # coverage so nothing is missed. Specific questions stay precise.
+    q_lower = query.lower()
+    broad_terms = ["project", "portfolio", "list", "everything", "all his",
+                   "what has he built", "what has he done", "his work"]
+    is_broad = any(term in q_lower for term in broad_terms)
+    effective_k = min(len(chunks), max(k, 14)) if is_broad else k
+
     if kb["mode"] == "semantic":
         q_vec = kb["embedder"].encode([query], normalize_embeddings=True)
         scores = cosine_similarity(q_vec, kb["vectors"])[0]
@@ -242,10 +251,11 @@ def retrieve_context(query, kb, k=3):
         q_vec = kb["vectorizer"].transform([query])
         scores = cosine_similarity(q_vec, kb["matrix"])[0]
     ranked = scores.argsort()[::-1]
-    picked = [(chunks[i], float(scores[i])) for i in ranked[:k] if scores[i] > 0]
+    picked = [(chunks[i], float(scores[i])) for i in ranked[:effective_k] if scores[i] > 0]
     if not picked:
         return kb["text"], []
-    return "\n\n".join(c for c, _ in picked), picked
+    context = "\n\n".join(c for c, _ in picked)
+    return context, picked[:6]  # feed all to the AI, keep the sources panel tidy
 
 
 def build_system_prompt(context_text):
