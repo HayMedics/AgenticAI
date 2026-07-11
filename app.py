@@ -28,7 +28,7 @@ DB_PATH = "analytics.db"
 
 HEADER_LOGO_CANDIDATES = ["Resources/HMA.jpg", "Resources/HMA__Tagline.jpg", "HMA.jpg"]
 ICON_CANDIDATES = ["Resources/HMA_ICON.jpg", "HMA_ICON.jpg", "Resources/HMA.jpg"]
-CONTEXT_CANDIDATES = ["Resources/summary.txt", "Resources/resume.pdf"]
+CONTEXT_CANDIDATES = ["Resources/summary.txt", "Resources/Summary.txt", "summary.txt", "Summary.txt"]
 
 
 # ----------------------------------------------------------------------
@@ -73,9 +73,10 @@ st.markdown(
     html, body, [class*="css"] { font-family:'Inter', sans-serif; color:var(--text); }
     .stApp { background:var(--bg); }
     .block-container { max-width:880px; padding-top:0.5rem; padding-bottom:8rem; }
-   [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton { display:none; }
-    [data-testid="stToolbar"] button[title="Deploy"] { display:none; }
-    [data-testid="collapsedControl"] { display:block !important; visibility:visible !important; }
+    [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton { display:none; }
+    [data-testid="stToolbar"] { background:transparent; }
+    [data-testid="stToolbar"] button[kind="header"], [data-testid="stToolbar"] button[title="Deploy"] { display:none; }
+    [data-testid="collapsedControl"] { display:flex !important; visibility:visible !important; opacity:1 !important; }
     #MainMenu, footer { visibility:hidden; }
     header { background:transparent; }
     h1, h2, h3 { font-family:'Poppins', sans-serif; color:var(--navy); }
@@ -184,10 +185,10 @@ def load_context_text():
     if path:
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return f.read()
+                return f.read(), path
         except Exception:
             pass
-    return ""
+    return "", None
 
 
 def build_chunks(text, target_words=60):
@@ -217,17 +218,17 @@ def get_embedder():
 
 @st.cache_resource(show_spinner=False)
 def get_knowledge_base():
-    text = load_context_text()
+    text, source_file = load_context_text()
     chunks = build_chunks(text)
     if not chunks:
-        return {"mode": "empty", "text": text, "chunks": []}
+        return {"mode": "empty", "text": text, "chunks": [], "source_file": source_file}
     embedder = get_embedder()
     if embedder is not None:
         vectors = embedder.encode(chunks, normalize_embeddings=True)
-        return {"mode": "semantic", "text": text, "chunks": chunks, "embedder": embedder, "vectors": vectors}
+        return {"mode": "semantic", "text": text, "chunks": chunks, "embedder": embedder, "vectors": vectors, "source_file": source_file}
     vectorizer = TfidfVectorizer(stop_words="english")
     matrix = vectorizer.fit_transform(chunks)
-    return {"mode": "keyword", "text": text, "chunks": chunks, "vectorizer": vectorizer, "matrix": matrix}
+    return {"mode": "keyword", "text": text, "chunks": chunks, "vectorizer": vectorizer, "matrix": matrix, "source_file": source_file}
 
 
 def retrieve_context(query, kb, k=3):
@@ -334,6 +335,7 @@ with st.sidebar:
         k = st.slider("Context depth", 1, 5, 3, help="How many of the most relevant profile sections the AI reads per question.")
         st.caption(f"Search mode: {MODE_LABELS.get(KB['mode'], KB['mode'])}")
         st.caption(f"🔎 Knowledge base: {len(KB['chunks'])} sections indexed")
+        st.caption(f"📄 Reading: {KB.get('source_file') or '⚠️ NO FILE FOUND'}")
 
     st.markdown("---")
     if st.button("🧹  Clear conversation", use_container_width=True):
